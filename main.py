@@ -4,6 +4,8 @@ import os
 import numpy as np
 import re
 
+EOS_TOKEN = 0
+
 def load_dataset(parquet_path, vocab_size=5000):
     """
     Load and preprocess the dataset from a Parquet file.
@@ -51,7 +53,6 @@ def main():
     """
     Train the RNN model using the WikiText dataset and perform inference on a test example.
     """
-    # Get the directory of this script (RNN-school/)
     project_root = os.path.dirname(os.path.abspath(__file__))
 
     # Define the path to the Parquet file
