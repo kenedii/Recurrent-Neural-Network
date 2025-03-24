@@ -56,12 +56,13 @@ class RNNTrainer:
         self.token_to_idx = {token: idx for idx, token in enumerate(unique_tokens)}
         self.idx_to_token = {idx: token for idx, token in enumerate(unique_tokens)}
 
-    def train(self, X, embeddings, Wxh, Whh, Why, bh, by, epochs, learning_rate, save_weights=True):
+    def train(self, X, unique_tokens, embeddings, Wxh, Whh, Why, bh, by, epochs, learning_rate, save_weights=True):
         """
         Train the RNN using the DLL and save weights to a file after training.
 
         Parameters:
         - X: np.ndarray, token indices as float32 [sequence_length]
+        - unique_tokens: list of str, unique tokens in the vocabulary
         - embeddings: np.ndarray, [vocab_size, embedding_dim]
         - Wxh: np.ndarray, [embedding_dim, hidden_size]
         - Whh: np.ndarray, [hidden_size, hidden_size]
@@ -72,6 +73,9 @@ class RNNTrainer:
         - learning_rate: float, learning rate for training
         - save_weights: bool, whether to save weights after training
         """
+        # Set the vocabulary at the start of training
+        self.set_vocabulary(unique_tokens)
+
         # Ensure arrays are contiguous and of type float32
         X = np.ascontiguousarray(X, dtype=np.float32)
         embeddings = np.ascontiguousarray(embeddings, dtype=np.float32)
@@ -86,6 +90,10 @@ class RNNTrainer:
         vocab_size = embeddings.shape[0]
         embedding_dim = embeddings.shape[1]
         hidden_size = Wxh.shape[1]
+
+        # Validate that vocab_size matches the number of unique tokens
+        if vocab_size != len(unique_tokens):
+            raise ValueError(f"Vocabulary size in embeddings ({vocab_size}) does not match length of unique_tokens ({len(unique_tokens)}).")
 
         # Create and populate the Params structure
         p = Params()
@@ -129,31 +137,21 @@ class RNNTrainer:
         self.by = by
 
         if save_weights:
-            # Save weights to a file, including vocabulary if set
-            print(f"Saving weights to 'rnn_weights.npz'...")
+            # Save weights to a file, including vocabulary
+            weights_file = f"rnn_weights{str(time())}.npz"
+            print(f"Saving weights to '{weights_file}'...")
             try:
-                if hasattr(self, 'unique_tokens'):
-                    np.savez(
-                        f"rnn_weights{str(time())}.npz",
-                        embeddings=embeddings,
-                        Wxh=Wxh,
-                        Whh=Whh,
-                        Why=Why,
-                        bh=bh,
-                        by=by,
-                        unique_tokens=np.array(self.unique_tokens, dtype=object)
-                    )
-                else:
-                    np.savez(
-                        f"rnn_weights{str(time())}.npz",
-                        embeddings=embeddings,
-                        Wxh=Wxh,
-                        Whh=Whh,
-                        Why=Why,
-                        bh=bh,
-                        by=by
-                    )
-                print(f"Weights saved successfully to 'rnn_weights{str(time())}.npz'.")
+                np.savez(
+                    weights_file,
+                    embeddings=embeddings,
+                    Wxh=Wxh,
+                    Whh=Whh,
+                    Why=Why,
+                    bh=bh,
+                    by=by,
+                    unique_tokens=np.array(self.unique_tokens, dtype=object)
+                )
+                print(f"Weights saved successfully to '{weights_file}'.")
             except Exception as e:
                 print(f"Error saving weights: {e}")
 
