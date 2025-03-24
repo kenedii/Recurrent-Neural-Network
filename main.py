@@ -4,8 +4,6 @@ import os
 import numpy as np
 import re
 
-EOS_TOKEN = 0
-
 def load_dataset(parquet_path, vocab_size=5000):
     """
     Load and preprocess the dataset from a Parquet file.
@@ -53,6 +51,7 @@ def main():
     """
     Train the RNN model using the WikiText dataset and perform inference on a test example.
     """
+    # Get the directory of this script (RNN-school/)
     project_root = os.path.dirname(os.path.abspath(__file__))
 
     # Define the path to the Parquet file
@@ -67,7 +66,7 @@ def main():
     # Define RNN hyperparameters
     embedding_dim = 50
     hidden_size = 100
-    epochs = 100
+    epochs = 133
     learning_rate = 0.0001
     max_input_size = 1000  # Limit for testing
 
@@ -90,12 +89,13 @@ def main():
     # Initialize the trainer with the DLL path
     dll_path = os.path.join(project_root, "src", "rnn.dll")
     trainer = rnn.RNNTrainer(dll_path=dll_path)
-    trainer.set_vocabulary(unique_tokens)  # Set the vocabulary for inference
+    # Removed: trainer.set_vocabulary(unique_tokens)  # No longer needed
 
     # Train the RNN and save weights
     print("Training model...")
     trainer.train(
         X=X,
+        unique_tokens=unique_tokens,  
         embeddings=embeddings,
         Wxh=Wxh,
         Whh=Whh,
