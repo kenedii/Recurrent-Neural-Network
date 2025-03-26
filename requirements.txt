@@ -3,3 +3,4 @@ numpy
 pandas
 fastapi
 pydantic
+gensim
