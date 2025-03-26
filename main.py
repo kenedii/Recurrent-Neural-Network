@@ -137,7 +137,7 @@ def main():
     by = np.zeros(vocab_size, dtype=np.float32)
 
     # Initialize the trainer
-    dll_path = os.path.join(project_root, "src", "rnn.dll")
+    dll_path = "rnn.dll"
     trainer = RNNTrainer(dll_path=dll_path)
     trainer.set_vocabulary(unique_tokens)
     trainer.set_model_params(vocab_size, embedding_dim, hidden_size)
