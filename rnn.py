@@ -2,13 +2,12 @@ import ctypes
 import numpy as np
 from time import time
 
-# Define the Params structure to match the C struct
+# Define the Params structure to match the C struct (without embeddings)
 class Params(ctypes.Structure):
     _fields_ = [
         ("vocab_size", ctypes.c_int),
         ("embedding_dim", ctypes.c_int),
         ("hidden_size", ctypes.c_int),
-        ("embeddings", ctypes.POINTER(ctypes.c_float)),
         ("Wxh", ctypes.POINTER(ctypes.c_float)),
         ("Whh", ctypes.POINTER(ctypes.c_float)),
         ("Why", ctypes.POINTER(ctypes.c_float)),
@@ -23,21 +22,26 @@ class RNNTrainer:
         
         # Set up the train function
         self.rnn_lib.train.argtypes = [
-            ctypes.POINTER(Params),
-            ctypes.POINTER(ctypes.c_float),
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_float,
+            ctypes.POINTER(Params),           # params
+            ctypes.POINTER(ctypes.c_float),   # embedded_X
+            ctypes.POINTER(ctypes.c_int),     # targets
+            ctypes.c_int,                     # sequence_length
+            ctypes.c_int,                     # embedding_dim
+            ctypes.c_int,                     # epochs
+            ctypes.c_float,                   # learning_rate
+            ctypes.POINTER(ctypes.c_float)    # d_embedded_X
         ]
-        self.rnn_lib.train.restype = None
+        self.rnn_lib.train.restype = ctypes.c_float
         
         # Set up generate function
         self.rnn_lib.generate.argtypes = [
-            ctypes.POINTER(Params),
-            ctypes.c_int,                   # start_idx
-            ctypes.c_int,                   # eos_idx
-            ctypes.c_int,                   # max_len
-            ctypes.POINTER(ctypes.c_int),   # gen_len
+            ctypes.POINTER(Params),           # params
+            ctypes.POINTER(ctypes.c_float),   # embeddings
+            ctypes.c_int,                     # vocab_size
+            ctypes.c_int,                     # start_idx
+            ctypes.c_int,                     # eos_idx
+            ctypes.c_int,                     # max_len
+            ctypes.POINTER(ctypes.c_int),     # gen_len
         ]
         self.rnn_lib.generate.restype = ctypes.POINTER(ctypes.c_float)
         
@@ -55,81 +59,97 @@ class RNNTrainer:
         self.unique_tokens = unique_tokens
         self.token_to_idx = {token: idx for idx, token in enumerate(unique_tokens)}
         self.idx_to_token = {idx: token for idx, token in enumerate(unique_tokens)}
+        self.vocab_size = len(unique_tokens)
 
-    def train(self, X, unique_tokens, embeddings, Wxh, Whh, Why, bh, by, epochs, learning_rate, save_weights=True):
+    def train(self, embedded_X, targets, sequence_length, embedding_dim, epochs, learning_rate, Wxh=None, Whh=None, Why=None, bh=None, by=None, save_weights=True):
         """
         Train the RNN using the DLL and save weights to a file after training.
 
         Parameters:
-        - X: np.ndarray, token indices as float32 [sequence_length]
-        - unique_tokens: list of str, unique tokens in the vocabulary
-        - embeddings: np.ndarray, [vocab_size, embedding_dim]
-        - Wxh: np.ndarray, [embedding_dim, hidden_size]
-        - Whh: np.ndarray, [hidden_size, hidden_size]
-        - Why: np.ndarray, [hidden_size, vocab_size]
-        - bh: np.ndarray, [hidden_size]
-        - by: np.ndarray, [vocab_size]
-        - epochs: int, number of training epochs
+        - embedded_X: np.ndarray, embedded input vectors [sequence_length, embedding_dim], float32
+        - targets: np.ndarray, target token indices [sequence_length], int32
+        - sequence_length: int, length of the input sequence
+        - embedding_dim: int, dimension of each embedding vector
+        - epochs: int, number of training epochs (this call will run all epochs in the C function)
         - learning_rate: float, learning rate for training
+        - Wxh, Whh, Why, bh, by: np.ndarray, optional initial weights and biases
         - save_weights: bool, whether to save weights after training
-        """
-        # Set the vocabulary at the start of training
-        self.set_vocabulary(unique_tokens)
 
-        # Ensure arrays are contiguous and of type float32
-        X = np.ascontiguousarray(X, dtype=np.float32)
-        embeddings = np.ascontiguousarray(embeddings, dtype=np.float32)
+        Returns:
+        - float: average loss
+        - np.ndarray: gradients for embedded_X
+        """
+        # Ensure arrays are contiguous and of correct type
+        embedded_X = np.ascontiguousarray(embedded_X, dtype=np.float32)
+        targets = np.ascontiguousarray(targets, dtype=np.int32)
+
+        # Initialize weights if not provided
+        if Wxh is None:
+            Wxh = np.random.randn(embedding_dim, self.hidden_size).astype(np.float32) * 0.01
+        if Whh is None:
+            Whh = np.random.randn(self.hidden_size, self.hidden_size).astype(np.float32) * 0.01
+        if Why is None:
+            Why = np.random.randn(self.hidden_size, self.vocab_size).astype(np.float32) * 0.01
+        if bh is None:
+            bh = np.zeros(self.hidden_size, dtype=np.float32)
+        if by is None:
+            by = np.zeros(self.vocab_size, dtype=np.float32)
+
+        # Ensure weights are contiguous
         Wxh = np.ascontiguousarray(Wxh, dtype=np.float32)
         Whh = np.ascontiguousarray(Whh, dtype=np.float32)
         Why = np.ascontiguousarray(Why, dtype=np.float32)
         bh = np.ascontiguousarray(bh, dtype=np.float32)
         by = np.ascontiguousarray(by, dtype=np.float32)
 
-        # Set dimensions
-        input_size = len(X)
-        vocab_size = embeddings.shape[0]
-        embedding_dim = embeddings.shape[1]
-        hidden_size = Wxh.shape[1]
-
-        # Validate that vocab_size matches the number of unique tokens
-        if vocab_size != len(unique_tokens):
-            raise ValueError(f"Vocabulary size in embeddings ({vocab_size}) does not match length of unique_tokens ({len(unique_tokens)}).")
+        # Validate dimensions
+        if embedded_X.shape[0] != sequence_length or embedded_X.shape[1] != embedding_dim:
+            raise ValueError(f"embedded_X shape {embedded_X.shape} does not match sequence_length {sequence_length} and embedding_dim {embedding_dim}")
+        if targets.shape[0] != sequence_length:
+            raise ValueError(f"targets shape {targets.shape} does not match sequence_length {sequence_length}")
+        if Wxh.shape != (embedding_dim, self.hidden_size) or Whh.shape != (self.hidden_size, self.hidden_size) or Why.shape != (self.hidden_size, self.vocab_size):
+            raise ValueError("Weight matrix dimensions do not match expected shapes")
+        if bh.shape[0] != self.hidden_size or by.shape[0] != self.vocab_size:
+            raise ValueError("Bias vector dimensions do not match expected sizes")
 
         # Create and populate the Params structure
         p = Params()
-        p.vocab_size = vocab_size
+        p.vocab_size = self.vocab_size
         p.embedding_dim = embedding_dim
-        p.hidden_size = hidden_size
-        p.embeddings = embeddings.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
+        p.hidden_size = self.hidden_size
         p.Wxh = Wxh.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
         p.Whh = Whh.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
         p.Why = Why.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
         p.bh = bh.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
         p.by = by.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
 
+        # Allocate gradient array
+        d_embedded_X = np.zeros_like(embedded_X, dtype=np.float32)
+
         # Print training setup
         print("Training setup:")
-        print(f" - Vocab size: {vocab_size}")
+        print(f" - Vocab size: {self.vocab_size}")
         print(f" - Embedding dim: {embedding_dim}")
-        print(f" - Hidden size: {hidden_size}")
-        print(f" - Input size: {input_size}")
+        print(f" - Hidden size: {self.hidden_size}")
+        print(f" - Sequence length: {sequence_length}")
         print(f" - Epochs: {epochs}")
         print(f" - Learning rate: {learning_rate}")
-        print(f" - Sample of X (first 10): {X[:10]}")
 
         # Call the train function from the DLL
         print("Starting training...")
-        self.rnn_lib.train(
+        loss = self.rnn_lib.train(
             ctypes.byref(p),
-            X.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
-            input_size,
-            epochs,
-            learning_rate
+            embedded_X.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+            targets.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
+            sequence_length,
+            embedding_dim,
+            epochs,  # Here we pass the full number of epochs
+            learning_rate,
+            d_embedded_X.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
         )
-        print("Training completed successfully.")
-        
-        # Store weights in the instance for later use (e.g., inference)
-        self.embeddings = embeddings
+        print(f"Training completed successfully. Loss: {loss:.4f}")
+
+        # Store weights in the instance
         self.Wxh = Wxh
         self.Whh = Whh
         self.Why = Why
@@ -137,13 +157,11 @@ class RNNTrainer:
         self.by = by
 
         if save_weights:
-            # Save weights to a file, including vocabulary
-            weights_file = f"rnn_weights{str(time())}.npz"
+            weights_file = f"rnn_weights_{int(time())}.npz"
             print(f"Saving weights to '{weights_file}'...")
             try:
                 np.savez(
                     weights_file,
-                    embeddings=embeddings,
                     Wxh=Wxh,
                     Whh=Whh,
                     Why=Why,
@@ -155,31 +173,38 @@ class RNNTrainer:
             except Exception as e:
                 print(f"Error saving weights: {e}")
 
+        return loss, d_embedded_X
+
     def load_model(self, weights_file):
         """
-        Load model weights and vocabulary from a file.
+        Load model weights, vocabulary, and embeddings from a file.
 
         Parameters:
-        - weights_file: str, path to the .npz file containing the weights
+        - weights_file: str, path to the .npz file containing the weights and embeddings
         """
         data = np.load(weights_file, allow_pickle=True)
-        self.embeddings = data['embeddings']
         self.Wxh = data['Wxh']
         self.Whh = data['Whh']
         self.Why = data['Why']
         self.bh = data['bh']
         self.by = data['by']
-        # Load vocabulary if present
+        self.hidden_size = self.Whh.shape[0]
+        self.vocab_size = self.by.shape[0]
+        self.embedding_dim = self.Wxh.shape[0]
         if 'unique_tokens' in data:
             self.unique_tokens = data['unique_tokens'].tolist()
             self.token_to_idx = {token: idx for idx, token in enumerate(self.unique_tokens)}
             self.idx_to_token = {idx: token for idx, token in enumerate(self.unique_tokens)}
         else:
-            print("Warning: No vocabulary found in the weights file. Call set_vocabulary separately if needed.")
+            raise ValueError("No vocabulary found in the weights file.")
+        if 'embeddings' in data:
+            self.embeddings = data['embeddings']
+        else:
+            raise ValueError("No embeddings found in the weights file.")
 
     def inference(self, input_text, max_len=50):
         """
-        Perform inference on text input using the DLL.
+        Perform inference on text input using the DLL with loaded embeddings.
 
         Parameters:
         - input_text: str, input text to condition the generation
@@ -190,54 +215,72 @@ class RNNTrainer:
         """
         if not hasattr(self, 'unique_tokens'):
             raise ValueError("Vocabulary not set. Call set_vocabulary or load_model with vocabulary first.")
-        if not hasattr(self, 'embeddings'):
+        if not hasattr(self, 'Wxh'):
             raise ValueError("Model weights not loaded. Call load_model or train first.")
+        if not hasattr(self, 'embeddings'):
+            raise ValueError("Embeddings not loaded. Ensure the model was loaded with embeddings.")
 
-        # Tokenize the input text (simple whitespace splitting)
+        # Tokenize the input text
         input_tokens = input_text.split()
         if not input_tokens:
             raise ValueError("Input text is empty.")
-        # Use the last token as the starting index; 0 for unknown tokens
         start_idx = self.token_to_idx.get(input_tokens[-1], 0)
-
-        # Get the end-of-sequence token index
         eos_idx = self.token_to_idx["<EOS>"]
+
+        # Use the loaded embeddings
+        embeddings = self.embeddings
+
+        # Ensure embeddings are contiguous and correct type
+        embeddings = np.ascontiguousarray(embeddings, dtype=np.float32)
+        if embeddings.shape[0] != self.vocab_size or embeddings.shape[1] != self.embedding_dim:
+            raise ValueError(f"Embeddings shape {embeddings.shape} does not match vocab_size {self.vocab_size} and embedding_dim {self.embedding_dim}")
 
         # Prepare the Params structure
         p = Params()
-        p.vocab_size = len(self.unique_tokens)
-        p.embedding_dim = self.embeddings.shape[1]
-        p.hidden_size = self.Whh.shape[0]
-        p.embeddings = self.embeddings.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
+        p.vocab_size = self.vocab_size
+        p.embedding_dim = self.embedding_dim
+        p.hidden_size = self.hidden_size
         p.Wxh = self.Wxh.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
         p.Whh = self.Whh.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
         p.Why = self.Why.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
         p.bh = self.bh.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
         p.by = self.by.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
 
-        # Call the generate function from the DLL
+        # Call the generate function
         gen_len = ctypes.c_int()
         generated_ptr = self.rnn_lib.generate(
             ctypes.byref(p),
+            embeddings.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+            self.vocab_size,
             start_idx,
             eos_idx,
             max_len,
             ctypes.byref(gen_len)
         )
 
-        # Check if generate returned NULL
         if not generated_ptr:
             print("Warning: generate returned NULL, no sequence generated.")
             return ""
 
-        # Convert the generated sequence to a Python list
-        generated = [int(generated_ptr[i]) for i in range(gen_len.value)]
-
-        # Free the memory allocated in C using the DLL's function
+        # Convert the generated sequence to a NumPy array and free memory
+        generated = np.ctypeslib.as_array(generated_ptr, shape=(gen_len.value,))
+        generated = generated.astype(int)  # Convert to integer indices
+        result = generated.copy()
         self.rnn_lib.free_generated(generated_ptr)
 
-        # Convert indices back to tokens
-        generated_tokens = [self.idx_to_token[idx] for idx in generated]
-
-        # Join tokens into a string
+        # Convert indices to tokens
+        generated_tokens = [self.idx_to_token.get(idx, "<UNK>") for idx in result]
         return ' '.join(generated_tokens)
+
+    def set_model_params(self, vocab_size, embedding_dim, hidden_size):
+        """
+        Set the model parameters for initialization.
+
+        Parameters:
+        - vocab_size: int, size of the vocabulary
+        - embedding_dim: int, dimension of embedding vectors
+        - hidden_size: int, size of the hidden state
+        """
+        self.vocab_size = vocab_size
+        self.embedding_dim = embedding_dim
+        self.hidden_size = hidden_size
