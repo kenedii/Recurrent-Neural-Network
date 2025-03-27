@@ -16,7 +16,7 @@ if not os.path.exists(WEIGHTS_DIR):
     os.makedirs(WEIGHTS_DIR)
 
 # Define the path to the RNN DLL
-DLL_PATH = os.path.join(PROJECT_ROOT, "src", "rnn.dll")
+DLL_PATH = os.path.join(PROJECT_ROOT, "rnn.dll")
 
 # Define the request model for inference endpoints
 class InferenceRequest(BaseModel):
