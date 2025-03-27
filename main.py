@@ -3,7 +3,7 @@ import os
 import numpy as np
 import re
 import gensim.downloader as api
-from rnn import RNNTrainer  # Your updated module
+from rnn import RNNTrainer 
 from time import time
 
 def load_data(parquet_paths):
@@ -24,7 +24,7 @@ def load_data(parquet_paths):
 
 def build_vocabulary(texts, vocab_size=5000):
     """
-    Build vocabulary from text data, including EOS token.
+    Build vocabulary from text data, including EOS token, filtering out non-words.
     """
     EOS_TOKEN = "<EOS>"
     tokens = []
@@ -32,9 +32,11 @@ def build_vocabulary(texts, vocab_size=5000):
         sentences = re.split(r'(?<=[.!?])\s+', text.strip())
         for sentence in sentences:
             if sentence:
-                sentence_tokens = sentence.split()
+                # Include only tokens that are words (letters only)
+                sentence_tokens = [token for token in sentence.split() if re.fullmatch(r'[a-zA-Z]+', token)]
                 tokens.extend(sentence_tokens)
                 tokens.append(EOS_TOKEN)
+    # Limit vocabulary size and ensure EOS_TOKEN is included
     unique_tokens = sorted(set(tokens))[:vocab_size - 1]
     if EOS_TOKEN not in unique_tokens:
         unique_tokens.append(EOS_TOKEN)
@@ -43,7 +45,7 @@ def build_vocabulary(texts, vocab_size=5000):
 
 def tokenize_data(texts, token_to_idx):
     """
-    Convert text data to token indices using the provided vocabulary.
+    Convert text data to token indices, filtering out non-words and including EOS token.
     """
     EOS_TOKEN = "<EOS>"
     tokens = []
@@ -51,9 +53,11 @@ def tokenize_data(texts, token_to_idx):
         sentences = re.split(r'(?<=[.!?])\s+', text.strip())
         for sentence in sentences:
             if sentence:
-                sentence_tokens = sentence.split()
+                # Include only tokens that are words (letters only)
+                sentence_tokens = [token for token in sentence.split() if re.fullmatch(r'[a-zA-Z]+', token)]
                 tokens.extend(sentence_tokens)
                 tokens.append(EOS_TOKEN)
+    # Map tokens to indices, defaulting to 0 for unknown tokens
     X_indices = np.array([token_to_idx.get(token, 0) for token in tokens], dtype=np.int32)
     return X_indices
 
@@ -126,7 +130,7 @@ def main():
 
     # Define hyperparameters
     hidden_size = 100
-    epochs = 200
+    epochs = 600
     learning_rate = 0.00001
 
     # Initialize RNN weights with updated embedding_dim
@@ -137,7 +141,7 @@ def main():
     by = np.zeros(vocab_size, dtype=np.float32)
 
     # Initialize the trainer
-    dll_path = "rnn.dll"
+    dll_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rnn.dll")
     trainer = RNNTrainer(dll_path=dll_path)
     trainer.set_vocabulary(unique_tokens)
     trainer.set_model_params(vocab_size, embedding_dim, hidden_size)
@@ -159,10 +163,13 @@ def main():
     )
     print(f"Training completed. Final Loss: {loss:.4f}")
 
+    # Set the embeddings after training
+    trainer.embeddings = embedding_matrix
+
     # Inference
     test_input = "I am"
     print(f"Performing inference on: '{test_input}'")
-    generated_text = trainer.inference(test_input, embedding_matrix)
+    generated_text = trainer.inference(test_input)
     print("Generated text:", generated_text)
 
     # Save trained model with fixed embeddings
