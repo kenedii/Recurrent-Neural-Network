@@ -1,6 +1,7 @@
-ctypes
 numpy
 pandas
+gensim
+torch
 fastapi
 pydantic
-gensim
+uvicorn
