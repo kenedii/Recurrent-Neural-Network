@@ -2,7 +2,7 @@ import os
 import torch
 from fastapi import FastAPI, HTTPException, UploadFile
 from pydantic import BaseModel
-import rnn  # Import RNNTrainer from rnn.py
+from rnn import RNNTrainer   # Import RNNTrainer from rnn.py
 from torch_rnn import RNNModel, generate  # Import RNNModel and generate from torch_rnn.py
 
 # Initialize the FastAPI app
@@ -16,7 +16,7 @@ if not os.path.exists(WEIGHTS_DIR):
     os.makedirs(WEIGHTS_DIR)
 
 # Define the path to the RNN DLL or .so
-DLL_PATH = os.path.join(PROJECT_ROOT, "bin", "rnn.dll")
+DLL_PATH = os.path.join(PROJECT_ROOT, "lib", "rnn.dll") # DLL_PATH = os.path.join(PROJECT_ROOT, "rnn.so") for docker
 
 # Define the request model for inference endpoints
 class InferenceRequest(BaseModel):
@@ -45,7 +45,7 @@ async def inference_rnn_from_weights(request: InferenceRequest):
     if not os.path.exists(weights_path):
         raise HTTPException(status_code=404, detail="Weights file not found")
     try:
-        trainer = rnn.RNNTrainer(dll_path=DLL_PATH)
+        trainer = RNNTrainer(dll_path=DLL_PATH)
         trainer.load_model(weights_path)
         generated_text = trainer.inference(request.input_text, request.max_len)
         return {"generated_text": generated_text}
@@ -73,18 +73,27 @@ async def inference_rnn_from_pytorch_weights(request: InferenceRequest):
     if not os.path.exists(weights_path):
         raise HTTPException(status_code=404, detail="Weights file not found")
     try:
-        saved_data = torch.load(weights_path)
+        # Load the saved data from the .pth file
+        saved_data = torch.load(weights_path, map_location=torch.device('cpu'))  # Use CPU for inference
         unique_tokens = saved_data['unique_tokens']
         token_to_idx = saved_data['token_to_idx']
         idx_to_token = {idx: token for token, idx in token_to_idx.items()}
         vocab_size = len(unique_tokens)
-        embedding_dim = 300  # Matches Word2Vec embedding size in torch_rnn.py
-        hidden_size = 100  # Matches hidden_size in torch_rnn.py
-        # Create a dummy embedding matrix (overwritten by state dict)
-        embedding_matrix = torch.zeros((vocab_size, embedding_dim), dtype=torch.float32)
+        embedding_dim = 300  # Matches Word2Vec embedding size in training
+        hidden_size = 100  # Matches hidden_size in training
+
+        # Create a dummy embedding matrix as a NumPy array (consistent with training)
+        import numpy as np
+        embedding_matrix = np.zeros((vocab_size, embedding_dim), dtype=np.float32)
+
+        # Initialize the model with the NumPy embedding matrix
         model = RNNModel(vocab_size, embedding_dim, hidden_size, embedding_matrix)
+        
+        # Load the saved state dict into the model
         model.load_state_dict(saved_data['model_state_dict'])
         model.eval()
+
+        # Perform inference
         generated_text = generate(model, request.input_text, token_to_idx, idx_to_token, request.max_len)
         return {"generated_text": generated_text}
     except Exception as e:
