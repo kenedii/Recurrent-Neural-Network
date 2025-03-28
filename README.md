@@ -8,7 +8,7 @@ Windows:
 
 Training:
 
-C RNN: `python train.py`
+C RNN: `python main.py`
 
 Pytorch: `python torch_rnn.py`
 
@@ -22,7 +22,7 @@ Training:
 
 C RNN: Ensure "dll path" in main.py points to `lib/rnnlib.so`
 
-`python train.py`
+`python main.py`
 
 Pytorch: `python torch_rnn.py`
 
