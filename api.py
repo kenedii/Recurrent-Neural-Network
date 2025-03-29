@@ -2,7 +2,7 @@ import os
 import torch
 from fastapi import FastAPI, HTTPException, UploadFile
 from pydantic import BaseModel
-from rnn import RNNTrainer   # Import RNNTrainer from rnn.py
+from rnn import RNNTrainer  # Import RNNTrainer from rnn.py
 from torch_rnn import RNNModel, generate  # Import RNNModel and generate from torch_rnn.py
 
 # Initialize the FastAPI app
@@ -15,14 +15,14 @@ WEIGHTS_DIR = os.path.join(PROJECT_ROOT, "weights")
 if not os.path.exists(WEIGHTS_DIR):
     os.makedirs(WEIGHTS_DIR)
 
-# Define the path to the RNN DLL or .so
-DLL_PATH = os.path.join(PROJECT_ROOT, "lib", "rnn.dll") # DLL_PATH = os.path.join(PROJECT_ROOT, "rnn.so") for docker
+# Define the path to the RNN DLL
+DLL_PATH = os.path.join(PROJECT_ROOT, "rnn.dll")
 
 # Define the request model for inference endpoints
 class InferenceRequest(BaseModel):
     input_text: str
     max_len: int = 50  # Default maximum length of generated text
-    weights_filename: str  # Filename of the weights file to use
+    weights_filename: str = "torch:trained_model_with_word2vec1.pth alt:trained_model_with_word2vec3.npz"  # Filename of the weights file to use
 
 # Endpoint for inference using RNNTrainer (DLL-based model)
 @app.post("/inference_rnn_from_weights/")

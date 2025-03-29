@@ -22,7 +22,7 @@ def load_data(parquet_paths):
         all_texts.extend(df['text'].to_list())
     return all_texts
 
-def build_vocabulary(texts, vocab_size=5000):
+def build_vocabulary(texts):
     """
     Build vocabulary from text data, including EOS token, filtering out non-words.
     """
@@ -36,10 +36,7 @@ def build_vocabulary(texts, vocab_size=5000):
                 sentence_tokens = [token for token in sentence.split() if re.fullmatch(r'[a-zA-Z]+', token)]
                 tokens.extend(sentence_tokens)
                 tokens.append(EOS_TOKEN)
-    # Limit vocabulary size and ensure EOS_TOKEN is included
-    unique_tokens = sorted(set(tokens))[:vocab_size - 1]
-    if EOS_TOKEN not in unique_tokens:
-        unique_tokens.append(EOS_TOKEN)
+    unique_tokens = sorted(set(tokens))
     token_to_idx = {token: idx for idx, token in enumerate(unique_tokens)}
     return unique_tokens, token_to_idx
 
@@ -66,11 +63,10 @@ def main():
     Train the RNN model with pre-trained Word2Vec embeddings and perform inference.
     """
     project_root = os.path.dirname(os.path.abspath(__file__))
-    data_dir = os.path.join(project_root, "WikiText_data", "WikiText-103-v1")
+    data_dir = os.path.join(project_root, "WikiText_data", "WikiText-2-v1")
     train_paths = [
-        os.path.join(data_dir, "train-00000-of-00002.parquet"),
-        os.path.join(data_dir, "train-00001-of-00002.parquet")
-    ]
+        os.path.join(data_dir, "train-00000-of-00001.parquet")]
+        #,os.path.join(data_dir, "train-00001-of-00002.parquet")]
 
     # Load and preprocess training data
     print("Loading training datasets...")
@@ -129,9 +125,9 @@ def main():
     embedded_X_np = embedding_matrix[X_indices_input]
 
     # Define hyperparameters
-    hidden_size = 100
-    epochs = 600
-    learning_rate = 0.00001
+    hidden_size = 64
+    epochs = 250
+    learning_rate = 0.0001
 
     # Initialize RNN weights with updated embedding_dim
     Wxh = np.random.randn(embedding_dim, hidden_size).astype(np.float32) * 0.01
@@ -141,7 +137,7 @@ def main():
     by = np.zeros(vocab_size, dtype=np.float32)
 
     # Initialize the trainer
-    dll_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib", "rnn.dll")
+    dll_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rnn.dll")
     trainer = RNNTrainer(dll_path=dll_path)
     trainer.set_vocabulary(unique_tokens)
     trainer.set_model_params(vocab_size, embedding_dim, hidden_size)

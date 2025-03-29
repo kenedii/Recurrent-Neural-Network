@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-# Data loading and preprocessing functions (unchanged)
+# Data loading and preprocessing functions
 def load_data(parquet_paths):
     """
     Load text data from one or more Parquet files.
@@ -57,7 +57,7 @@ def tokenize_data(texts, token_to_idx):
     X_indices = np.array([token_to_idx.get(token, 0) for token in tokens], dtype=np.int32)
     return X_indices
 
-# RNN Model (unchanged)
+# RNN Model
 class RNNModel(nn.Module):
     def __init__(self, vocab_size, embedding_dim, hidden_size, embedding_matrix):
         super(RNNModel, self).__init__()
@@ -73,7 +73,7 @@ class RNNModel(nn.Module):
         output = self.fc(output)
         return output, hidden
 
-# Inference function (unchanged)
+# Inference function 
 def generate(model, start_text, token_to_idx, idx_to_token, max_length=50):
     model.eval()
     start_tokens = [token_to_idx.get(token, 0) for token in start_text.split() if token in token_to_idx]
@@ -99,14 +99,14 @@ def generate(model, start_text, token_to_idx, idx_to_token, max_length=50):
     return generated_text
 
 def main():
-    # Set up paths (unchanged)
+    # Set up paths 
     project_root = os.path.dirname(os.path.abspath(__file__))
     data_dir = os.path.join(project_root, "WikiText_data", "WikiText-2-v1")
     train_paths = [
         os.path.join(data_dir, "train-00000-of-00001.parquet")]
         #,os.path.join(data_dir, "train-00001-of-00002.parquet")]
 
-    # Load and preprocess training data (unchanged)
+    # Load and preprocess training data
     print("Loading training datasets...")
     training_texts = load_data(train_paths)
     unique_tokens, token_to_idx = build_vocabulary(training_texts)
@@ -114,7 +114,7 @@ def main():
     idx_to_token = {idx: token for token, idx in token_to_idx.items()}
     print(f"Training dataset loaded with {vocab_size} unique tokens.")
 
-    # Load validation and test data (unchanged)
+    # Load validation and test data 
     validation_path = os.path.join(data_dir, "validation-00000-of-00001.parquet")
     test_path = os.path.join(data_dir, "test-00000-of-00001.parquet")
     
@@ -128,13 +128,13 @@ def main():
     test_X_indices = tokenize_data(test_texts, token_to_idx)
     print(f"Test dataset loaded with {len(test_X_indices)} tokens.")
 
-    # Load pre-trained Word2Vec model (unchanged)
+    # Load pre-trained Word2Vec model 
     print("Loading pre-trained Word2Vec model...")
     word2vec_model = api.load("word2vec-google-news-300")
     embedding_dim = word2vec_model.vector_size  # 300
     print("Word2Vec model loaded.")
 
-    # Create embedding matrix (unchanged)
+    # Create embedding matrix 
     print("Creating embedding matrix...")
     embedding_matrix = np.zeros((vocab_size, embedding_dim), dtype=np.float32)
     for token, idx in token_to_idx.items():
@@ -144,14 +144,14 @@ def main():
             embedding_matrix[idx] = np.random.randn(embedding_dim).astype(np.float32) * 0.01
     print("Embedding matrix created.")
 
-    # Tokenize training data and limit size (unchanged)
+    # Tokenize training data and limit size 
     X_indices = tokenize_data(training_texts, token_to_idx)
     print(f"Training dataset tokenized with {len(X_indices)} tokens.")
     max_input_size = 5000
     if len(X_indices) > max_input_size:
         X_indices = X_indices[:max_input_size + 1]
 
-    # Prepare input and target sequences (unchanged)
+    # Prepare input and target sequences 
     X_indices_input = X_indices[:-1]
     targets = X_indices[1:]
     input_seq = torch.tensor(X_indices_input, dtype=torch.long)  # (seq_len)
@@ -162,12 +162,12 @@ def main():
     hidden_size = 100
     epochs = 1000
     learning_rate = 0.0001
-    chunk_size = 250  # New: Define chunk size for processing
+    chunk_size = 250 # Define chunk size for processing
 
-    # Initialize the model (unchanged)
+    # Initialize the model
     model = RNNModel(vocab_size, embedding_dim, hidden_size, embedding_matrix)
 
-    # Define loss and optimizer (unchanged)
+    # Define loss and optimizer 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -204,13 +204,13 @@ def main():
             print(f"Epoch {epoch+1}/{epochs}, Average Loss: {avg_loss:.4f}")
     print(f"Training completed. Final Average Loss: {avg_loss:.4f}")
 
-    # Inference (unchanged)
+    # Inference 
     test_input = "I am"
     print(f"Performing inference on: '{test_input}'")
     generated_text = generate(model, test_input, token_to_idx, idx_to_token)
     print("Generated text:", generated_text)
 
-    # Save the trained model (unchanged)
+    # Save the trained model 
     weights_file = "trained_model_with_word2vec.pth"
     torch.save({
         'model_state_dict': model.state_dict(),
