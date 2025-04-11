@@ -19,6 +19,7 @@ An RNN implemented in C with Python FastAPI endpoints.
 ## Operating Systems
 
 ### Windows
+**C RNN**: Ensure that the "dll path" in `main.py` points to `lib/rnnlib.dll`
 
 #### Training:
 - **C RNN**:
