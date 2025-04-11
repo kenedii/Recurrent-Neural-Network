@@ -35,6 +35,7 @@ An RNN implemented in C with Python FastAPI endpoints.
     ```
 
 #### Inference:
+- Ensure that the "dll path" in `api.py` points to `lib/rnnlib.dll`
 - Run the FastAPI server with the following command:
 
     ```bash
